@@ -1,0 +1,86 @@
+name: Docker Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (used as the Docker image tag, e.g. 1.2.3)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  STAGING_IMAGE: europe-west1-docker.pkg.dev/oneleet-staging/mdm/scep
+  PRODUCTION_IMAGE: europe-west1-docker.pkg.dev/oneleet-production/mdm/scep
+
+jobs:
+  build-and-push:
+    name: Build & push image
+    permissions:
+      actions: write
+      id-token: write
+      contents: read
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: 🐳 Set up Docker Builder
+        uses: useblacksmith/setup-docker-builder@ab5c1da94f53f5cd75c1038092aa276dddfccbba
+
+      - name: Setup Go environment
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: "1.19"
+
+      - name: Build linux binaries
+        run: make docker VERSION=${{ inputs.version }}
+
+      - name: 🐳 Docker build scep server
+        uses: useblacksmith/build-push-action@30c71162f16ea2c27c3e21523255d209b8b538c1
+        with:
+          context: .
+          push: false
+          load: true
+          file: ./Dockerfile
+          tags: |
+            ${{ env.STAGING_IMAGE }}:${{ inputs.version }}
+            ${{ env.PRODUCTION_IMAGE }}:${{ inputs.version }}
+          build-args: |
+            VERSION=${{ inputs.version }}
+
+      # --- Staging ---
+      - name: Authenticate to Google Cloud (staging)
+        id: auth-staging
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          token_format: "access_token"
+          workload_identity_provider: ${{ secrets.GCP_PROVIDER_NAME }}
+          service_account: ${{ secrets.GCP_STAGING_SA_EMAIL }}
+
+      - name: Set up gcloud (staging)
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - run: gcloud auth configure-docker europe-west1-docker.pkg.dev -q
+
+      - name: 🐳 Push to staging GAR
+        run: docker push ${{ env.STAGING_IMAGE }}:${{ inputs.version }}
+
+      # --- Production ---
+      - name: Authenticate to Google Cloud (production)
+        id: auth-production
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          token_format: "access_token"
+          workload_identity_provider: ${{ secrets.GCP_PROVIDER_NAME }}
+          service_account: ${{ secrets.GCP_PRODUCTION_SA_EMAIL }}
+
+      - name: Set up gcloud (production)
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+
+      - run: gcloud auth configure-docker europe-west1-docker.pkg.dev -q
+
+      - name: 🐳 Push to production GAR
+        run: docker push ${{ env.PRODUCTION_IMAGE }}:${{ inputs.version }}
