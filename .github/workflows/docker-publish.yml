@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 env:
-  STAGING_IMAGE: europe-west1-docker.pkg.dev/oneleet-staging/mdm/scep
-  PRODUCTION_IMAGE: europe-west1-docker.pkg.dev/oneleet-production/mdm/scep
+  STAGING_IMAGE: europe-west1-docker.pkg.dev/oneleet-staging/scep/scep
+  PRODUCTION_IMAGE: europe-west1-docker.pkg.dev/oneleet-production/scep/scep
 
 jobs:
   build-and-push:
